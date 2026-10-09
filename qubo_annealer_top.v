@@ -1,25 +1,12 @@
-// -----------------------------------------------------------------------
-// qubo_annealer_top.v  (30x30 version, parametrized schedule length)
-//
-// Same architecture as before. N_TEMPS and SWEEPS_PER_TEMP are now module
-// parameters (defaulting to the original 40/10) rather than fixed
-// localparams, so a longer search can be run by instantiating this same
-// module with an overridden SWEEPS_PER_TEMP -- no file duplication needed.
-// T_START/ALPHA_FIXED are unaffected by this, since they depend only on
-// the worst-case dE range (a function of N and the Q value range), not
-// on how many sweeps happen at each temperature.
-//
-// Requires -g2012 for the array port.
-// -----------------------------------------------------------------------
-module qubo_annealer_top #(
-    parameter integer N_TEMPS         = 40,
-    parameter integer SWEEPS_PER_TEMP = 10   // default matches the original schedule; override to extend the search
+module qubo_annealer_top #( //qubo annealer loop for the 30x30 matrix 
+    parameter integer N_TEMPS         = 40, //# of temperature steps 
+    parameter integer SWEEPS_PER_TEMP = 10  //# of sweeps per temperature 
 ) (
-    input  wire        clk,
-    input  wire        rst_n,
-    input  wire        start,
+    input  wire        clk, //clock line 
+    input  wire        rst_n, //reset line 
+    input  wire        start, //start line (trigger)
 
-    input  wire signed [5:0] q_in [0:29][0:29],  // full symmetric matrix, -32..31 each
+    input  wire signed [5:0] q_in [0:29][0:29],  // 30 value matrix 
 
     output reg         done,
     output reg  [29:0] x_out
@@ -28,19 +15,13 @@ module qubo_annealer_top #(
     localparam N = 30;
     localparam NUM_OTHERS = N - 1;
 
-    // ---------------- fixed hardware constants (see gen_constants_30x30.py) ----------------
-    // T_START/ALPHA_FIXED depend only on the worst-case dE range (a function of N and the
-    // Q value range), NOT on the sweep schedule -- so these stay correct unchanged even
-    // when SWEEPS_PER_TEMP is overridden to run a longer search.
     localparam [19:0] T_START     = 20'd271180;
     localparam [7:0]  ALPHA_FIXED = 8'd197;
     localparam [19:0] T_MIN       = 20'd8;
 
-    // ---------------- FSM ----------------
     localparam S_IDLE = 3'd0, S_RUN = 3'd1, S_COOL = 3'd2, S_DONE = 3'd3;
     reg [2:0] state;
 
-    // ---------------- registers ----------------
     reg signed [5:0] q [0:29][0:29];
     reg [29:0] spin_reg;
     reg [19:0] t_reg;
@@ -50,7 +31,6 @@ module qubo_annealer_top #(
 
     integer li, lj;
 
-    // ---------------- LFSR seeds, one per unit ----------------
     function [7:0] seed_for;
         input integer idx;
         begin
@@ -70,7 +50,7 @@ module qubo_annealer_top #(
         end
     endfunction
 
-    // ---------------- h'_i = 2*Qii + sum of the 29 off-diagonal row entries ----------------
+
     wire signed [11:0] h_partial [0:29][0:29];
     wire signed [11:0] h [0:29];
 
@@ -88,7 +68,6 @@ module qubo_annealer_top #(
         end
     endgenerate
 
-    // ---------------- 30 parallel spin update units ----------------
     wire [29:0] accept_vec;
 
     generate
@@ -121,12 +100,10 @@ module qubo_annealer_top #(
         end
     endgenerate
 
-    // ---------------- temperature cooling ----------------
     wire [27:0] t_mult    = t_reg * ALPHA_FIXED;
     wire [19:0] t_shifted = t_mult[27:8];
     wire [19:0] t_next    = (t_shifted < T_MIN) ? T_MIN : t_shifted;
 
-    // ---------------- main FSM ----------------
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             state       <= S_IDLE;
